@@ -365,7 +365,6 @@ app.post("/QTTsubmit", async (req, res) => {
 app.get("/QTThistory", async (req, res) => {
   try {
     const userEmail = req.query.email;
-    console.log("QTThistory request for email:", userEmail); // <---
 
     if (!userEmail) {
       return res.status(400).json({ message: "Missing user email" });
