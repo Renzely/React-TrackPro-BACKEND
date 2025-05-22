@@ -9,6 +9,7 @@ const Attendance = require("./attendance");
 const auth = require("./auth");
 const QTTProcess = require("./QTT");
 const Competitors = require("./competitors");
+const Expiry = require("./expiry");
 const bcrypt = require("bcryptjs");
 const User = require("./users");
 const AdminUser = require("./adminUsers");
@@ -455,6 +456,65 @@ app.get("/competitors/history", async (req, res) => {
   }
 });
 
+// EXPIRY
+
+app.post("/expiry/save", async (req, res) => {
+  try {
+    const { date, merchandiser, outlet, expiryEntries, userEmail } = req.body;
+
+    // Basic validation
+    if (
+      !date ||
+      !merchandiser ||
+      !outlet ||
+      !userEmail ||
+      !expiryEntries ||
+      expiryEntries.length === 0
+    ) {
+      return res.status(400).json({ message: "All fields are required." });
+    }
+
+    for (let entry of expiryEntries) {
+      if (!entry.month || !entry.sku || !entry.expiration) {
+        return res.status(400).json({
+          message: "Each expiry entry must have Month, SKU, and Expiration.",
+        });
+      }
+    }
+
+    const newExpiry = new Expiry({
+      date,
+      merchandiser,
+      outlet,
+      expiryEntries,
+      userEmail,
+    });
+
+    await newExpiry.save();
+    res.status(200).json({ message: "Expiry data saved successfully." });
+  } catch (error) {
+    console.error("Save error:", error);
+    res.status(500).json({ message: "Server error while saving expiry data." });
+  }
+});
+
+// EXPIRY HISTORY
+
+app.get("/expiry/history", async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ message: "Email is required" });
+
+  try {
+    const history = await Expiry.find({ userEmail: email }).sort({
+      createdAt: -1,
+    });
+    res.json(history);
+  } catch (err) {
+    console.error("History fetch error:", err);
+    res.status(500).json({ message: "Failed to fetch expiry history" });
+  }
+});
+
 // DATE PICKER
 
 app.post("/filter-date-range", async (req, res) => {
@@ -838,22 +898,62 @@ app.post("/signup", async (req, res) => {
   res.status(201).json({ message: "User registered. OTP sent to email." });
 });
 
-app.post("/verify-otp", async (req, res) => {
-  const { email, otp } = req.body;
+// FORGOT PASSWORD
 
-  // Find the OTP entry
-  const otpEntry = await Otp.findOne({ email, otp });
+app.post("/forgot-password", async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Save OTP in the Otp collection with purpose "reset-password"
+    await Otp.create({
+      email,
+      otp,
+      purpose: "reset-password",
+      createdAt: new Date(),
+    });
+
+    // Send OTP via email
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Password Reset OTP",
+      text: `Your OTP is: ${otp}`,
+    });
+
+    res.status(200).json({ message: "OTP sent to email" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to send OTP" });
+  }
+});
+
+// VERIFY OTP
+
+app.post("/verify-otp", async (req, res) => {
+  const { email, otp, purpose } = req.body;
+
+  const otpEntry = await Otp.findOne({ email, otp, purpose });
   if (!otpEntry) {
     return res.status(400).json({ message: "Invalid or expired OTP" });
   }
 
-  // Mark user as verified
-  await User.updateOne({ email }, { isVerified: true });
+  if (purpose === "verify-email") {
+    await User.updateOne({ email }, { isVerified: true });
+  }
 
-  // Delete the OTP entry
-  await Otp.deleteOne({ _id: otpEntry._id });
+  // For reset-password, don’t delete OTP yet. Just return success.
+  if (purpose === "verify-email") {
+    await Otp.deleteOne({ _id: otpEntry._id });
+  }
 
-  res.status(200).json({ message: "Email verified successfully" });
+  return res.status(200).json({ message: "OTP verified successfully" });
 });
 
 const transporter = nodemailer.createTransport({
@@ -873,6 +973,26 @@ const sendEmail = async (to, subject, text) => {
   };
   await transporter.sendMail(mailOptions);
 };
+
+// RESET PASSWORD
+
+app.post("/reset-password", async (req, res) => {
+  const { email, newPassword } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({ message: "Password has been reset successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Reset failed" });
+  }
+});
 
 //PROFILE
 
