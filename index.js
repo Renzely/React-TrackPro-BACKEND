@@ -1048,6 +1048,7 @@ app.post("/login", async (req, res) => {
             lastName: user.lastName,
             email: user.email,
             outlet: user.outlet,
+            role: user.role,
           },
         });
       }
