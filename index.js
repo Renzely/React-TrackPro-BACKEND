@@ -284,6 +284,97 @@ app.get("/attendance/status", async (req, res) => {
   }
 });
 
+// ADMIN ATTENDANCE HISTOTRY
+
+app.post("/get-attendance", async (req, res) => {
+  try {
+    const { email, startDate, endDate } = req.body;
+
+    let query = { email: email };
+
+    // If date range is provided, add date filtering
+    if (startDate && endDate) {
+      const start = new Date(startDate + "T00:00:00.000Z");
+      const end = new Date(endDate + "T23:59:59.999Z");
+
+      query.$or = [
+        {
+          date: {
+            $gte: start,
+            $lte: end,
+          },
+        },
+        {
+          // Also handle string dates
+          date: {
+            $regex: new RegExp(
+              startDate.replace(/-/g, "") + "|" + endDate.replace(/-/g, "")
+            ),
+          },
+        },
+      ];
+    }
+
+    // Fetch all attendance records for the user, sorted by date in ascending order
+    const attendanceRecords = await Attendance.find(query).sort({
+      date: 1,
+    });
+
+    if (!attendanceRecords.length) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // Log the raw data to inspect the time coordinates
+    console.log(
+      "Fetched Attendance Records:",
+      JSON.stringify(attendanceRecords, null, 2)
+    );
+
+    // Flatten the data structure for frontend consumption
+    const result = [];
+    let count = 1;
+
+    attendanceRecords.forEach((attendance) => {
+      attendance.timeLogs.forEach((log) => {
+        // Log each time log coordinates
+        console.log("Time In Coordinates:", log.timeInCoordinates);
+        console.log("Time Out Coordinates:", log.timeOutCoordinates);
+
+        result.push({
+          count: count++,
+          email: attendance.email, // Add this line
+          date: attendance.date,
+          outlet: log.outlet || "",
+          timeIn: log.timeIn,
+          timeOut: log.timeOut,
+          hasTimedIn: !!log.timeIn,
+          hasTimedOut: !!log.timeOut,
+          timeInLocation: log.timeInLocation || "No location provided",
+          timeOutLocation: log.timeOutLocation || "No location provided",
+          timeInCoordinates: log.timeInCoordinates || {
+            latitude: 0,
+            longitude: 0,
+          },
+          timeOutCoordinates: log.timeOutCoordinates || {
+            latitude: 0,
+            longitude: 0,
+          },
+          timeInSelfieUrl: log.timeInSelfieUrl || "",
+          timeOutSelfieUrl: log.timeOutSelfieUrl || "",
+        });
+      });
+    });
+
+    console.log("Formatted Attendance Data:", JSON.stringify(result, null, 2));
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Error in /get-attendance:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+// Attendance Export
+
 // QTT Image
 
 const QTTImage = new AWS.S3({
@@ -380,6 +471,176 @@ app.get("/QTThistory", async (req, res) => {
   }
 });
 
+// QTT HISTORY FOR ADMIN
+
+app.post("/retrieve-QTTS-data", async (req, res) => {
+  const { branches } = req.body; // frontend sends 'branches'
+
+  if (!branches || !Array.isArray(branches)) {
+    return res
+      .status(400)
+      .json({ status: 400, message: "Invalid branch data" });
+  }
+
+  try {
+    const qttsData = await QTTProcess.find({
+      outlet: { $in: branches }, // use branches to match outlet field
+    });
+
+    console.log("Filtered QTTS data:", qttsData);
+    return res.status(200).json({ status: 200, data: qttsData });
+  } catch (error) {
+    console.error("Error retrieving QTTS data:", error);
+    return res.status(500).json({ status: 500, message: "Server error" });
+  }
+});
+
+//QTT PSR EXPORT
+
+app.post("/export-PSR-data", async (req, res) => {
+  const { start, end } = req.body;
+  console.log("Received Request:", { start, end });
+
+  try {
+    // Convert timestamps to date strings (your schema uses string dates)
+    const startDate = new Date(start).toISOString().split("T")[0];
+    const endDate = new Date(end).toISOString().split("T")[0];
+
+    console.log("Date range:", { startDate, endDate });
+
+    const data = await mongoose.model("QTTProcess").aggregate([
+      {
+        $match: {
+          date: { $gte: startDate, $lte: endDate }, // Fixed: use $lte instead of $lt
+          userType: "PSR", // Fixed: use userType instead of selectedType
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "userEmail",
+          foreignField: "email",
+          as: "user_details",
+        },
+      },
+      {
+        $addFields: {
+          // Extract user details if available
+          merchandiserName: {
+            $ifNull: [
+              { $arrayElemAt: ["$user_details.name", 0] },
+              "$merchandiser", // Fallback to merchandiser field
+            ],
+          },
+        },
+      },
+      {
+        $project: {
+          date: 1,
+          merchandiserName: 1,
+          outlet: 1,
+          userType: 1,
+          // Map the PSR-specific fields from your schema
+          firstBrandSeen: { $ifNull: ["$firstBrandSeen", "No Answer"] },
+          complianceDOG: { $ifNull: ["$complianceDOG", "No Answer"] },
+          complianceCAT: { $ifNull: ["$complianceCAT", "No Answer"] },
+          beforeImage: { $ifNull: ["$beforeImage", ""] },
+          afterImage: { $ifNull: ["$afterImage", ""] },
+        },
+      },
+      {
+        $sort: {
+          date: 1,
+          merchandiserName: 1,
+        },
+      },
+    ]);
+
+    // Log the data to see what is returned from the aggregation query
+    console.log("Query Result:", data);
+
+    if (data.length === 0) {
+      return res.status(200).send({ status: 200, data: [] }); // No data found
+    }
+
+    return res.send({ status: 200, data });
+  } catch (error) {
+    console.error("Aggregation Error:", error.message);
+    return res.status(500).send({ error: error.message });
+  }
+});
+
+// QTT VET EXPORT
+
+app.post("/export-VET-data", async (req, res) => {
+  const { start, end } = req.body;
+  console.log("Received Request:", { start, end });
+
+  try {
+    // The dates are already in YYYY-MM-DD format from frontend
+    console.log("Date range:", { start, end });
+
+    const data = await mongoose.model("QTTProcess").aggregate([
+      {
+        $match: {
+          date: { $gte: start, $lte: end }, // Fixed: use $lte instead of $lt, and dates are strings
+          userType: "VET", // Fixed: use userType instead of selectedType
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "userEmail",
+          foreignField: "email",
+          as: "user_details",
+        },
+      },
+      {
+        $addFields: {
+          // Extract user details if available
+          merchandiserName: {
+            $ifNull: [
+              { $arrayElemAt: ["$user_details.name", 0] },
+              "$merchandiser", // Fallback to merchandiser field
+            ],
+          },
+        },
+      },
+      {
+        $project: {
+          date: 1,
+          merchandiserName: 1,
+          outlet: 1,
+          userType: 1,
+          // Map the VET-specific fields from your schema
+          shelfSpace: { $ifNull: ["$shelfSpace", "No Answer"] },
+          designatedRack: { $ifNull: ["$designatedRack", "No Answer"] },
+          beforeImage: { $ifNull: ["$beforeImage", ""] },
+          afterImage: { $ifNull: ["$afterImage", ""] },
+        },
+      },
+      {
+        $sort: {
+          date: 1,
+          merchandiserName: 1,
+        },
+      },
+    ]);
+
+    console.log("Query Result:", data);
+    console.log("Total VET records found:", data.length);
+
+    if (data.length === 0) {
+      return res.status(200).send({ status: 200, data: [] });
+    }
+
+    return res.send({ status: 200, data });
+  } catch (error) {
+    console.error("Aggregation Error:", error.message);
+    return res.status(500).send({ error: error.message });
+  }
+});
+
 // Competitors
 
 app.post("/competitors/save", async (req, res) => {
@@ -456,6 +717,119 @@ app.get("/competitors/history", async (req, res) => {
   }
 });
 
+// COMPETITORS HISTORY ADMIN
+
+app.post("/retrieve-competitor-data", async (req, res) => {
+  try {
+    const { branches } = req.body;
+
+    console.log("Received branches:", branches);
+
+    // Validate that branches is an array
+    if (!branches || !Array.isArray(branches)) {
+      return res
+        .status(400)
+        .json({ status: 400, message: "Invalid branch data" });
+    }
+
+    // Retrieve all competitor data for debugging
+    const allCompetitorData = await Competitors.find({});
+    console.log("All Competitor Data:", allCompetitorData);
+
+    // Log the regex patterns for matching branches
+    const branchPatterns = branches.map(
+      (branch) => new RegExp(`^${branch.trim()}$`, "i")
+    );
+    console.log("Branch regex patterns:", branchPatterns);
+
+    // Find competitors matching the provided branches
+    const competitorsdata = await Competitors.find({
+      outlet: {
+        $in: branches.map((branch) => new RegExp(branch.trim(), "i")),
+      },
+    });
+    console.log("Competitors data after filtering:", competitorsdata);
+
+    console.log("Filtered Competitor Data:", competitorsdata);
+
+    if (competitorsdata.length === 0) {
+      console.warn("No matching competitor data found.");
+      return res.status(200).json({ status: 200, data: [] });
+    }
+
+    return res.status(200).json({ status: 200, data: competitorsdata });
+  } catch (error) {
+    console.error("Error retrieving competitors data:", error);
+    return res.status(500).json({ status: 500, error: "Server error" });
+  }
+});
+
+// COMPETITORS EXPORT
+
+app.post("/export-competitors-data", async (req, res) => {
+  const { start, end } = req.body;
+
+  try {
+    const data = await mongoose.model("Competitor").aggregate([
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $gte: [{ $toDate: "$date" }, new Date(start)] },
+              { $lte: [{ $toDate: "$date" }, new Date(end)] },
+            ],
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: "users", // assuming 'users' collection contains user profiles
+          localField: "userEmail",
+          foreignField: "email",
+          as: "user_details",
+        },
+      },
+      {
+        $replaceRoot: {
+          newRoot: {
+            $mergeObjects: [{ $arrayElemAt: ["$user_details", 0] }, "$$ROOT"],
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          date: 1,
+          merchandiser: 1,
+          outlet: 1,
+          store: 1,
+          company: 1,
+          brand: 1,
+          promoType: 1,
+          promoDetails: 1,
+          displayLocation: 1,
+          pricing: 1,
+          duration: 1,
+          impact: 1,
+          feedback: 1,
+          user_first_name: "$first_name", // from joined user document
+          user_last_name: "$last_name", // from joined user document
+        },
+      },
+      {
+        $sort: {
+          date: 1,
+          merchandiser: 1,
+        },
+      },
+    ]);
+
+    return res.send({ status: 200, data });
+  } catch (error) {
+    return res.status(500).send({ error: error.message });
+  }
+});
+
 // EXPIRY
 
 app.post("/expiry/save", async (req, res) => {
@@ -515,113 +889,38 @@ app.get("/expiry/history", async (req, res) => {
   }
 });
 
-// DATE PICKER
+// DATE PICKER FOR COMPETITORS
 
 app.post("/filter-date-range", async (req, res) => {
   const { startDate, endDate } = req.body;
   console.log("Filter range:", { startDate, endDate });
 
   try {
-    const inventoryInRange = await Inventory.find({
-      date: { $gte: startDate, $lte: endDate },
+    // Convert the incoming ISO dates to YYYY-MM-DD format to match your database
+    const startDateString = new Date(startDate).toISOString().split("T")[0];
+    const endDateString = new Date(endDate).toISOString().split("T")[0];
+
+    console.log("Converted to date strings:", {
+      startDateString,
+      endDateString,
     });
 
-    console.log("Found inventory in range:", inventoryInRange);
-    return res.status(200).json({ status: 200, data: inventoryInRange });
-  } catch (error) {
-    console.error("Error fetching inventory:", error);
-    return res.status(500).send({ error: "Internal Server Error" });
-  }
-});
-
-app.post("/export-inventory-towi", async (req, res) => {
-  const { start, end } = req.body;
-
-  try {
-    const data = await Inventory.aggregate([
+    const competitorsDataRange = await Competitors.aggregate([
       {
         $match: {
-          $expr: {
-            $and: [
-              { $gte: [{ $toDate: "$date" }, new Date(start)] },
-              { $lt: [{ $toDate: "$date" }, new Date(end)] },
-            ],
+          date: {
+            $gte: startDateString,
+            $lte: endDateString,
           },
-        },
-      },
-      {
-        $lookup: {
-          from: "users",
-          localField: "email",
-          foreignField: "email",
-          as: "user_details",
-        },
-      },
-      {
-        $unwind: {
-          path: "$user_details",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $project: {
-          date: 1,
-          merchandiser: 1,
-          outlet: 1,
-          weeksCovered: 1,
-          month: 1,
-          week: 1,
-          locked: 1,
-          versions: 1,
         },
       },
     ]);
 
-    const formatted = [];
-
-    data.forEach((record, index) => {
-      ["V1", "V2", "V3"].forEach((versionKey) => {
-        const version = record.versions?.[versionKey];
-        if (!version) return;
-
-        ["Carried", "Not Carried", "Delisted"].forEach((status) => {
-          const skuList = version[status] || [];
-
-          skuList.forEach((sku) => {
-            formatted.push({
-              count: formatted.length + 1,
-              date: record.date,
-              fullname: record.merchandiser || "N/A",
-              outlet: record.outlet,
-              weeksCovered: record.weeksCovered,
-              month: record.month,
-              week: record.week,
-              sku: sku.sku,
-              skuCode: sku.skuCode,
-              status,
-              beginning:
-                status === "Carried"
-                  ? sku.beginningPCS || 0
-                  : status === "Not Carried"
-                  ? "NC"
-                  : "Delisted",
-              delivery: status === "Carried" ? sku.deliveryPCS || 0 : "",
-              ending: status === "Carried" ? sku.endingPCS || 0 : "",
-              offtake: status === "Carried" ? sku.offtake || 0 : "",
-              inventoryDaysLevel:
-                status === "Carried" ? sku.inventoryDays || 0 : "",
-              expiryMonth: status === "Carried" ? sku.expiryMonths || "" : "",
-              expiryQty: status === "Carried" ? sku.expiryQty || 0 : "",
-            });
-          });
-        });
-      });
-    });
-
-    return res.send({ status: 200, data: formatted });
+    console.log("Found competitors in range:", competitorsDataRange.length);
+    return res.status(200).json({ status: 200, data: competitorsDataRange });
   } catch (error) {
-    console.error("Error exporting inventory data:", error);
-    return res.status(500).send({ error: error.message });
+    console.error("Error fetching competitors:", error);
+    return res.status(500).send({ error: "Internal Server Error" });
   }
 });
 
