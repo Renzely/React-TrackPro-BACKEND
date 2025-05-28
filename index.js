@@ -889,9 +889,151 @@ app.get("/expiry/history", async (req, res) => {
   }
 });
 
+// EXPIRY DATA ADMIN
+
+app.post("/retrieve-expiry-data", async (req, res) => {
+  try {
+    const { branches } = req.body;
+
+    console.log("Received branches:", branches);
+
+    if (!branches || !Array.isArray(branches)) {
+      return res.status(400).json({ status: 400, message: "Invalid w data" });
+    }
+
+    const allExpiryData = await Expiry.find({});
+    console.log("All expiry Data:", allExpiryData);
+
+    const branchPatterns = branches.map(
+      (branch) => new RegExp(`^${branch.trim()}$`, "i")
+    );
+    console.log("Branch regex patterns:", branchPatterns);
+
+    const expirydata = await Expiry.find({
+      outlet: {
+        $in: branches.map((branch) => new RegExp(branch.trim(), "i")),
+      },
+    });
+    console.log("expiry data after filtering:", expirydata);
+
+    console.log("Filtered Competitor Data:", expirydata);
+
+    if (expirydata.length === 0) {
+      console.warn("No matching expiry data found.");
+      return res.status(200).json({ status: 200, data: [] });
+    }
+
+    return res.status(200).json({ status: 200, data: expirydata });
+  } catch (error) {
+    console.error("Error retrieving expiry data:", error);
+    return res.status(500).json({ status: 500, error: "Server error" });
+  }
+});
+
+// EXPIRY EXPORT DATA
+
+app.post("/export-Expiry-data", async (req, res) => {
+  const { start, end } = req.body;
+  console.log("Received Request:", { start, end });
+
+  try {
+    // Since date is stored as string in your schema, convert to string format for comparison
+    const startDate = new Date(start).toISOString().split("T")[0]; // "2025-05-28"
+    const endDate = new Date(end).toISOString().split("T")[0]; // "2025-05-28"
+
+    console.log("Date range for comparison:", { startDate, endDate });
+
+    const data = await mongoose.model("Expiry").aggregate([
+      {
+        $match: {
+          date: { $gte: startDate, $lte: endDate }, // String comparison
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "userEmail",
+          foreignField: "email",
+          as: "user_details",
+        },
+      },
+      {
+        $addFields: {
+          merchandiserName: {
+            $ifNull: [
+              { $arrayElemAt: ["$user_details.name", 0] },
+              "$merchandiser", // This field exists in your schema
+            ],
+          },
+        },
+      },
+      {
+        $project: {
+          date: 1,
+          merchandiserName: 1,
+          outlet: 1,
+          // Note: userType doesn't exist in your schema, so we'll set a default
+          userType: { $literal: "Expiry" }, // Set a default value since it's not in schema
+          // Note: version doesn't exist in your schema, so we'll set a default
+          version: { $literal: "v1" }, // Set a default value since it's not in schema
+          // Your schema has expiryEntries, not expiry
+          expiryEntries: 1,
+        },
+      },
+      {
+        $sort: {
+          date: 1,
+          merchandiserName: 1,
+        },
+      },
+    ]);
+
+    console.log("Query results count:", data.length);
+    if (data.length > 0) {
+      console.log("Sample result:", JSON.stringify(data[0], null, 2));
+    }
+
+    if (data.length === 0) {
+      return res.status(200).send({ status: 200, data: [] });
+    }
+
+    return res.send({ status: 200, data });
+  } catch (error) {
+    console.error("Aggregation Error:", error.message);
+    return res.status(500).send({ error: error.message });
+  }
+});
 // DATE PICKER FOR COMPETITORS
 
-app.post("/filter-date-range", async (req, res) => {
+app.post("/filter-date-range-Expiry", async (req, res) => {
+  const { startDate, endDate } = req.body;
+  console.log("Filter range:", { startDate, endDate });
+
+  try {
+    const startDateString = new Date(startDate).toISOString().split("T")[0];
+    const endDateString = new Date(endDate).toISOString().split("T")[0];
+
+    console.log("Converted to date strings:", {
+      startDateString,
+      endDateString,
+    });
+
+    const expiryDataRange = await Expiry.find({
+      date: {
+        $gte: startDateString,
+        $lte: endDateString,
+      },
+    });
+
+    console.log("Found expiry data in range:", expiryDataRange.length);
+    return res.status(200).json({ status: 200, data: expiryDataRange });
+  } catch (error) {
+    console.error("Error fetching expiry data:", error);
+    return res.status(500).send({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/filter-date-range-Conpetitor", async (req, res) => {
   const { startDate, endDate } = req.body;
   console.log("Filter range:", { startDate, endDate });
 
@@ -920,6 +1062,72 @@ app.post("/filter-date-range", async (req, res) => {
     return res.status(200).json({ status: 200, data: competitorsDataRange });
   } catch (error) {
     console.error("Error fetching competitors:", error);
+    return res.status(500).send({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/filter-date-range-PSR", async (req, res) => {
+  const { startDate, endDate } = req.body;
+  console.log("Filter range:", { startDate, endDate });
+
+  try {
+    const startDateString = new Date(startDate).toISOString().split("T")[0];
+    const endDateString = new Date(endDate).toISOString().split("T")[0];
+
+    console.log("Converted to date strings:", {
+      startDateString,
+      endDateString,
+    });
+
+    const PSRDataRange = await QTTProcess.aggregate([
+      {
+        $match: {
+          userType: "PSR", // <-- Only PSR
+          date: {
+            $gte: startDateString,
+            $lte: endDateString,
+          },
+        },
+      },
+    ]);
+
+    console.log("Found PSR in range:", PSRDataRange.length);
+    return res.status(200).json({ status: 200, data: PSRDataRange });
+  } catch (error) {
+    console.error("Error fetching PSR:", error);
+    return res.status(500).send({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/filter-date-range-VET", async (req, res) => {
+  const { startDate, endDate } = req.body;
+  console.log("Filter range:", { startDate, endDate });
+
+  try {
+    const startDateString = new Date(startDate).toISOString().split("T")[0];
+    const endDateString = new Date(endDate).toISOString().split("T")[0];
+
+    console.log("Converted to date strings:", {
+      startDateString,
+      endDateString,
+    });
+
+    const VETDataRange = await QTTProcess.aggregate([
+      {
+        $match: {
+          userType: "VET", // <-- Only VET
+          date: {
+            $gte: startDateString,
+            $lte: endDateString,
+          },
+        },
+      },
+    ]);
+
+    console.log("Found VET in range:", VETDataRange.length);
+    return res.status(200).json({ status: 200, data: VETDataRange });
+  } catch (error) {
+    console.error("Error fetching VET:", error);
     return res.status(500).send({ error: "Internal Server Error" });
   }
 });
