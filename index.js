@@ -57,19 +57,33 @@ app.post("/save-attendance-images", (req, res) => {
   });
 });
 
-function parseDateTime(dateStr, timeStr) {
-  const date = new Date(dateStr);
+function parsePhilippineDateTime(dateStr, timeStr) {
+  const baseDate = new Date(dateStr);
 
-  const dateTimeStr = `${dateStr} ${timeStr}`;
-  const dateTime = new Date(dateTimeStr);
+  const timeStrTrimmed = timeStr.trim().replace(/\s+/g, " ");
+  const [time, period] = timeStrTrimmed.split(" ");
 
-  if (isNaN(dateTime)) {
-    return date;
+  const [hours, minutes] = time.split(":");
+
+  let hour24 = parseInt(hours);
+
+  if (period?.toLowerCase() === "pm" && hour24 !== 12) {
+    hour24 += 12;
+  } else if (period?.toLowerCase() === "am" && hour24 === 12) {
+    hour24 = 0;
   }
-  return dateTime;
+
+  const year = baseDate.getFullYear();
+  const month = baseDate.getMonth();
+  const day = baseDate.getDate();
+
+  const phDateTime = new Date();
+  phDateTime.setFullYear(year, month, day);
+  phDateTime.setHours(hour24, parseInt(minutes), 0, 0);
+
+  return phDateTime;
 }
 
-// Route to handle time-in
 app.post("/attendance/time-in", async (req, res) => {
   try {
     console.log("Received /attendance/time-in request with body:", req.body);
@@ -97,8 +111,14 @@ app.post("/attendance/time-in", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields." });
     }
 
+    // Create Philippine timezone date objects
     const dateObj = new Date(date);
-    const timeInObj = parseDateTime(date, timeIn);
+    const timeInObj = parsePhilippineDateTime(date, timeIn);
+
+    // Log for debugging
+    console.log("Original timeIn string:", timeIn);
+    console.log("Parsed Philippine time:", timeInObj.toString());
+    console.log("Philippine time ISO:", timeInObj.toISOString());
 
     let attendance = await Attendance.findOne({ email, date: dateObj });
 
@@ -148,7 +168,6 @@ app.post("/attendance/time-in", async (req, res) => {
   }
 });
 
-// Route to handle time-out
 app.post("/attendance/time-out", async (req, res) => {
   try {
     const {
@@ -158,7 +177,7 @@ app.post("/attendance/time-out", async (req, res) => {
       timeOut,
       timeOutSelfieUrl,
       location,
-      timeOutLocation, // optional from client
+      timeOutLocation,
     } = req.body;
 
     if (
@@ -174,8 +193,13 @@ app.post("/attendance/time-out", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields." });
     }
 
+    // Create Philippine timezone date objects
     const dateObj = new Date(date);
-    const timeOutObj = parseDateTime(date, timeOut);
+    const timeOutObj = parsePhilippineDateTime(date, timeOut);
+
+    // Log for debugging
+    console.log("Original timeOut string:", timeOut);
+    console.log("Parsed Philippine time:", timeOutObj.toString());
 
     const attendance = await Attendance.findOne({ email, date: dateObj });
 
