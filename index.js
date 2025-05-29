@@ -15,16 +15,13 @@ const User = require("./users");
 const AdminUser = require("./adminUsers");
 const authMiddleware = require("./auth");
 const jwt = require("jsonwebtoken");
-const multer = require("multer");
-const multerS3 = require("multer-s3");
 require("dotenv").config();
 
 const nodemailer = require("nodemailer");
 const Otp = require("./otp");
 
 // MongoDB Atlas connection
-const uri =
-  "mongodb+srv://NewClientApp:NewClientAppPass@towi.v2djp3n.mongodb.net/ReactRC_UGC?retryWrites=true&w=majority&appName=TOWI";
+const uri = process.env.uri;
 
 mongoose
   .connect(uri)
@@ -281,6 +278,35 @@ app.get("/attendance/status", async (req, res) => {
   } catch (err) {
     console.error("Error fetching attendance status:", err);
     return res.status(500).json({ error: "Failed to fetch attendance status" });
+  }
+});
+
+// MOBILE ATTENDANCE HISTORY
+
+app.get("/attendance/history", async (req, res) => {
+  const { email } = req.query;
+  try {
+    const attendanceList = await Attendance.find({ email }).sort({ date: -1 });
+
+    const history = attendanceList.map((attendance) => {
+      return {
+        date: attendance.date,
+        timeLogs: attendance.timeLogs.map((log) => ({
+          outlet: log.outlet,
+          timeIn: log.timeIn,
+          timeOut: log.timeOut,
+          addressTimeIn: log.timeInLocation,
+          addressTimeOut: log.timeOutLocation,
+          timeInSelfieUri: log.timeInSelfieUrl,
+          timeOutSelfieUri: log.timeOutSelfieUrl,
+        })),
+      };
+    });
+
+    res.json(history);
+  } catch (err) {
+    console.error("Error fetching attendance history:", err);
+    res.status(500).json({ error: "Failed to fetch attendance history" });
   }
 });
 
@@ -719,47 +745,35 @@ app.get("/competitors/history", async (req, res) => {
 
 // COMPETITORS HISTORY ADMIN
 
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 app.post("/retrieve-competitor-data", async (req, res) => {
   try {
     const { branches } = req.body;
 
-    console.log("Received branches:", branches);
+    console.log("Received branches:", JSON.stringify(branches));
 
-    // Validate that branches is an array
     if (!branches || !Array.isArray(branches)) {
       return res
         .status(400)
         .json({ status: 400, message: "Invalid branch data" });
     }
 
-    // Retrieve all competitor data for debugging
-    const allCompetitorData = await Competitors.find({});
-    console.log("All Competitor Data:", allCompetitorData);
-
-    // Log the regex patterns for matching branches
     const branchPatterns = branches.map(
-      (branch) => new RegExp(`^${branch.trim()}$`, "i")
+      (outlet) => new RegExp(`^${escapeRegExp(outlet.trim())}$`, "i")
     );
-    console.log("Branch regex patterns:", branchPatterns);
 
-    // Find competitors matching the provided branches
     const competitorsdata = await Competitors.find({
-      outlet: {
-        $in: branches.map((branch) => new RegExp(branch.trim(), "i")),
-      },
+      outlet: { $in: branchPatterns },
     });
-    console.log("Competitors data after filtering:", competitorsdata);
 
-    console.log("Filtered Competitor Data:", competitorsdata);
-
-    if (competitorsdata.length === 0) {
-      console.warn("No matching competitor data found.");
-      return res.status(200).json({ status: 200, data: [] });
-    }
+    console.log("Filtered Competitor Data:", competitorsdata.length);
 
     return res.status(200).json({ status: 200, data: competitorsdata });
   } catch (error) {
-    console.error("Error retrieving competitors data:", error);
+    console.error("Error retrieving competitors data:", error.stack);
     return res.status(500).json({ status: 500, error: "Server error" });
   }
 });
@@ -891,41 +905,36 @@ app.get("/expiry/history", async (req, res) => {
 
 // EXPIRY DATA ADMIN
 
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 app.post("/retrieve-expiry-data", async (req, res) => {
   try {
     const { branches } = req.body;
 
-    console.log("Received branches:", branches);
-
     if (!branches || !Array.isArray(branches)) {
-      return res.status(400).json({ status: 400, message: "Invalid w data" });
+      return res
+        .status(400)
+        .json({ status: 400, message: "Invalid branch data" });
     }
 
-    const allExpiryData = await Expiry.find({});
-    console.log("All expiry Data:", allExpiryData);
-
     const branchPatterns = branches.map(
-      (branch) => new RegExp(`^${branch.trim()}$`, "i")
+      (branch) => new RegExp(`^${escapeRegExp(branch.trim())}$`, "i")
     );
-    console.log("Branch regex patterns:", branchPatterns);
 
     const expirydata = await Expiry.find({
       outlet: {
-        $in: branches.map((branch) => new RegExp(branch.trim(), "i")),
+        $in: branchPatterns,
       },
     });
-    console.log("expiry data after filtering:", expirydata);
-
-    console.log("Filtered Competitor Data:", expirydata);
 
     if (expirydata.length === 0) {
-      console.warn("No matching expiry data found.");
       return res.status(200).json({ status: 200, data: [] });
     }
 
     return res.status(200).json({ status: 200, data: expirydata });
   } catch (error) {
-    console.error("Error retrieving expiry data:", error);
     return res.status(500).json({ status: 500, error: "Server error" });
   }
 });
