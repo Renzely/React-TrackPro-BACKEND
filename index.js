@@ -57,7 +57,7 @@ app.post("/save-attendance-images", (req, res) => {
   });
 });
 
-function parsePhilippineDateTime(dateStr, timeStr) {
+function parsePhilippineDateTimeAlternative(dateStr, timeStr) {
   const baseDate = new Date(dateStr);
 
   const timeStrTrimmed = timeStr.trim().replace(/\s+/g, " ");
@@ -77,13 +77,31 @@ function parsePhilippineDateTime(dateStr, timeStr) {
   const month = baseDate.getMonth();
   const day = baseDate.getDate();
 
-  const phDateTime = new Date();
-  phDateTime.setFullYear(year, month, day);
-  phDateTime.setHours(hour24, parseInt(minutes), 0, 0);
+  // Create the datetime string in Philippine timezone format
+  const isoString = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+    day
+  ).padStart(2, "0")}T${String(hour24).padStart(2, "0")}:${String(
+    parseInt(minutes)
+  ).padStart(2, "0")}:00.000+08:00`;
 
-  return phDateTime;
+  return new Date(isoString);
 }
 
+// For your date field, also fix it to be in Philippine timezone
+function createPhilippineDate(dateStr) {
+  const date = new Date(dateStr);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
+
+  // Create date at midnight Philippine time
+  const isoString = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+    day
+  ).padStart(2, "0")}T00:00:00.000+08:00`;
+  return new Date(isoString);
+}
+
+// Updated endpoint code
 app.post("/attendance/time-in", async (req, res) => {
   try {
     console.log("Received /attendance/time-in request with body:", req.body);
@@ -112,8 +130,8 @@ app.post("/attendance/time-in", async (req, res) => {
     }
 
     // Create Philippine timezone date objects
-    const dateObj = new Date(date);
-    const timeInObj = parsePhilippineDateTime(date, timeIn);
+    const dateObj = createPhilippineDate(date); // Use the new function
+    const timeInObj = parsePhilippineDateTimeAlternative(date, timeIn); // Use alternative method
 
     // Log for debugging
     console.log("Original timeIn string:", timeIn);
@@ -194,8 +212,8 @@ app.post("/attendance/time-out", async (req, res) => {
     }
 
     // Create Philippine timezone date objects
-    const dateObj = new Date(date);
-    const timeOutObj = parsePhilippineDateTime(date, timeOut);
+    const dateObj = createPhilippineDate(date); // Use the new function
+    const timeOutObj = parsePhilippineDateTimeAlternative(date, timeOut); // Use alternative method
 
     // Log for debugging
     console.log("Original timeOut string:", timeOut);
@@ -258,7 +276,8 @@ app.get("/user/outlets", auth, async (req, res) => {
 app.get("/attendance/status", async (req, res) => {
   const { email, outlet, date } = req.query;
   try {
-    const dateObj = new Date(date);
+    // Use the same createPhilippineDate function from your time-in/time-out endpoints
+    const dateObj = createPhilippineDate(date);
     const attendance = await Attendance.findOne({ email, date: dateObj });
 
     if (!attendance) {
