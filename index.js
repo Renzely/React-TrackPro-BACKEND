@@ -1340,6 +1340,46 @@ app.post("/get-all-user", async (req, res) => {
   }
 });
 
+// UPDATE USER STATUS
+
+app.put("/update-user-status", async (req, res) => {
+  const { email, isVerified } = req.body;
+
+  if (!email || typeof isVerified !== "boolean") {
+    return res.status(400).send({
+      status: "error",
+      data: "Missing or invalid email / isVerified",
+    });
+  }
+
+  try {
+    const result = await User.findOneAndUpdate(
+      { email: email },
+      { $set: { isVerified: isVerified } },
+      { new: true }
+    );
+
+    if (!result) {
+      return res.status(404).send({
+        status: "error",
+        data: "User not found",
+      });
+    }
+
+    console.log("Updated user:", result);
+    res.send({
+      status: 200,
+      data: "Status updated",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({
+      status: "error",
+      data: error.message,
+    });
+  }
+});
+
 // UPDATE USERS OUTLET
 app.put("/update-user-branch", async (req, res) => {
   const { email, outlet } = req.body;
