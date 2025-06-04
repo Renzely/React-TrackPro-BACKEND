@@ -484,17 +484,37 @@ app.post("/QTTsubmit", async (req, res) => {
       date,
       merchandiser,
       outlet,
+      // PSR fields
       firstBrandSeen,
       complianceDOG,
       complianceCAT,
+      royalCaninSignage,
+      visibilityCashier,
+      endcapGondola,
+      wetProductsHighlight,
+      tacticalBin,
+      PSRComment,
+      // VET fields
       shelfSpace,
       designatedRack,
-      beforeImageKey,
-      afterImageKey,
+      // Images
+      firstBrandKey,
+      complianceDOGKey,
+      complianceCATKey,
+      royalCaninSignageKey,
+      visibilityCashierKey,
+      endcapGondolaKey,
+      wetProductsHighlightKey,
+      tacticalBinKey,
+      ShelfSpaceKey,
+      DesignatedKey,
     } = req.body;
 
-    const beforeImageUrl = `https://qtt-scoring-rc.s3.${process.env.AWS_REGION_QTT_COMPE}.amazonaws.com/${beforeImageKey}`;
-    const afterImageUrl = `https://qtt-scoring-rc.s3.${process.env.AWS_REGION_QTT_COMPE}.amazonaws.com/${afterImageKey}`;
+    // Compose full S3 URLs for each image key
+    const getS3Url = (key) =>
+      key
+        ? `https://qtt-scoring-rc.s3.${process.env.AWS_REGION_QTT_COMPE}.amazonaws.com/${key}`
+        : null;
 
     const qttData = new QTTProcess({
       userType,
@@ -502,16 +522,30 @@ app.post("/QTTsubmit", async (req, res) => {
       date,
       merchandiser,
       outlet,
-      beforeImage: beforeImageUrl,
-      afterImage: afterImageUrl,
       ...(userType === "PSR" && {
         firstBrandSeen,
         complianceDOG,
         complianceCAT,
+        royalCaninSignage,
+        visibilityCashier,
+        endcapGondola,
+        wetProductsHighlight,
+        tacticalBin,
+        PSRComment,
+        firstBrandImage: getS3Url(firstBrandKey),
+        complianceDOGImage: getS3Url(complianceDOGKey),
+        complianceCATImage: getS3Url(complianceCATKey),
+        royalCaninSignageImage: getS3Url(royalCaninSignageKey),
+        visibilityCashierImage: getS3Url(visibilityCashierKey),
+        endcapGondolaImage: getS3Url(endcapGondolaKey),
+        wetProductsHighlightImage: getS3Url(wetProductsHighlightKey),
+        tacticalBinImage: getS3Url(tacticalBinKey),
       }),
       ...(userType === "VET" && {
         shelfSpace,
         designatedRack,
+        shelfSpaceImage: getS3Url(ShelfSpaceKey),
+        designatedRackImage: getS3Url(DesignatedKey),
       }),
     });
 
@@ -571,7 +605,7 @@ app.post("/export-PSR-data", async (req, res) => {
   console.log("Received Request:", { start, end });
 
   try {
-    // Convert timestamps to date strings (your schema uses string dates)
+    // Convert to date-only strings (assuming date field is stored as "YYYY-MM-DD")
     const startDate = new Date(start).toISOString().split("T")[0];
     const endDate = new Date(end).toISOString().split("T")[0];
 
@@ -580,8 +614,8 @@ app.post("/export-PSR-data", async (req, res) => {
     const data = await mongoose.model("QTTProcess").aggregate([
       {
         $match: {
-          date: { $gte: startDate, $lte: endDate }, // Fixed: use $lte instead of $lt
-          userType: "PSR", // Fixed: use userType instead of selectedType
+          date: { $gte: startDate, $lte: endDate },
+          userType: "PSR",
         },
       },
       {
@@ -594,11 +628,10 @@ app.post("/export-PSR-data", async (req, res) => {
       },
       {
         $addFields: {
-          // Extract user details if available
           merchandiserName: {
             $ifNull: [
               { $arrayElemAt: ["$user_details.name", 0] },
-              "$merchandiser", // Fallback to merchandiser field
+              "$merchandiser",
             ],
           },
         },
@@ -609,12 +642,31 @@ app.post("/export-PSR-data", async (req, res) => {
           merchandiserName: 1,
           outlet: 1,
           userType: 1,
-          // Map the PSR-specific fields from your schema
           firstBrandSeen: { $ifNull: ["$firstBrandSeen", "No Answer"] },
           complianceDOG: { $ifNull: ["$complianceDOG", "No Answer"] },
           complianceCAT: { $ifNull: ["$complianceCAT", "No Answer"] },
-          beforeImage: { $ifNull: ["$beforeImage", ""] },
-          afterImage: { $ifNull: ["$afterImage", ""] },
+          royalCaninSignage: { $ifNull: ["$royalCaninSignage", "No Answer"] },
+          visibilityCashier: { $ifNull: ["$visibilityCashier", "No Answer"] },
+          endcapGondola: { $ifNull: ["$endcapGondola", "No Answer"] },
+          wetProductsHighlight: {
+            $ifNull: ["$wetProductsHighlight", "No Answer"],
+          },
+          tacticalBin: { $ifNull: ["$tacticalBin", "No Answer"] },
+          PSRComment: { $ifNull: ["$PSRComment", ""] },
+          firstBrandImage: { $ifNull: ["$firstBrandImage", ""] },
+          complianceDOGImage: { $ifNull: ["$complianceDOGImage", ""] },
+          complianceCATImage: { $ifNull: ["$complianceCATImage", ""] },
+          royalCaninSignageImage: {
+            $ifNull: ["$royalCaninSignageImage", ""],
+          },
+          visibilityCashierImage: {
+            $ifNull: ["$visibilityCashierImage", ""],
+          },
+          endcapGondolaImage: { $ifNull: ["$endcapGondolaImage", ""] },
+          wetProductsHighlightImage: {
+            $ifNull: ["$wetProductsHighlightImage", ""],
+          },
+          tacticalBinImage: { $ifNull: ["$tacticalBinImage", ""] },
         },
       },
       {
@@ -625,11 +677,10 @@ app.post("/export-PSR-data", async (req, res) => {
       },
     ]);
 
-    // Log the data to see what is returned from the aggregation query
     console.log("Query Result:", data);
 
     if (data.length === 0) {
-      return res.status(200).send({ status: 200, data: [] }); // No data found
+      return res.status(200).send({ status: 200, data: [] });
     }
 
     return res.send({ status: 200, data });
