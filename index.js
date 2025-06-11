@@ -276,7 +276,6 @@ app.get("/user/outlets", auth, async (req, res) => {
 app.get("/attendance/status", async (req, res) => {
   const { email, outlet, date } = req.query;
   try {
-    // Use the same createPhilippineDate function from your time-in/time-out endpoints
     const dateObj = createPhilippineDate(date);
     const attendance = await Attendance.findOne({ email, date: dateObj });
 
@@ -293,8 +292,14 @@ app.get("/attendance/status", async (req, res) => {
       });
     }
 
-    // Assuming attendance.timeLogs is an array of logs for outlets and timestamps
-    const log = attendance.timeLogs.find((log) => log.outlet === outlet);
+    const log = attendance.timeLogs.find((log) => {
+      if (outlet === "Others") {
+        // Match any "Others: ..." outlet
+        return log.outlet.startsWith("Others:");
+      }
+      return log.outlet === outlet;
+    });
+
     if (!log) {
       return res.json({
         hasTimedIn: false,
