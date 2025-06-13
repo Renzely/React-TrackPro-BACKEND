@@ -360,89 +360,70 @@ app.get("/attendance/history", async (req, res) => {
 
 // ADMIN ATTENDANCE HISTOTRY
 
+// routes/attendance.js
 app.post("/get-attendance", async (req, res) => {
   try {
     const { email, startDate, endDate } = req.body;
-
-    let query = { email: email };
-
-    // If date range is provided, add date filtering
-    if (startDate && endDate) {
-      const start = new Date(startDate + "T00:00:00.000Z");
-      const end = new Date(endDate + "T23:59:59.999Z");
-
-      query.$or = [
-        {
-          date: {
-            $gte: start,
-            $lte: end,
-          },
-        },
-        {
-          // Also handle string dates
-          date: {
-            $regex: new RegExp(
-              startDate.replace(/-/g, "") + "|" + endDate.replace(/-/g, "")
-            ),
-          },
-        },
-      ];
+    if (!email) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Email required" });
     }
 
-    // Fetch all attendance records for the user, sorted by date in ascending order
-    const attendanceRecords = await Attendance.find(query).sort({
-      date: 1,
-    });
+    // ------------------------------------------------------------------
+    // Build date range on createdAt (real Date field) -------------------
+    // ------------------------------------------------------------------
+    const range = {};
+    if (startDate) range.$gte = new Date(`${startDate}T00:00:00.000Z`);
+    if (endDate) range.$lte = new Date(`${endDate}T23:59:59.999Z`);
 
-    if (!attendanceRecords.length) {
+    const query = { email };
+    if (Object.keys(range).length) query.createdAt = range;
+
+    // ------------------------------------------------------------------
+    // Fetch & prepare response -----------------------------------------
+    // ------------------------------------------------------------------
+    const records = await Attendance.find(query).sort({ createdAt: 1 });
+
+    if (!records.length) {
       return res.json({ success: true, data: [] });
     }
 
-    // Log the raw data to inspect the time coordinates
-    console.log(
-      "Fetched Attendance Records:",
-      JSON.stringify(attendanceRecords, null, 2)
+    let counter = 1;
+    const flat = records.flatMap((att) =>
+      att.timeLogs.map((log) => ({
+        count: counter++,
+        email: att.email,
+        // keep the original human‑readable string for UI
+        date: att.date,
+
+        outlet: log.outlet ?? "",
+        timeIn: log.timeIn ?? null,
+        timeOut: log.timeOut ?? null,
+
+        hasTimedIn: Boolean(log.timeIn),
+        hasTimedOut: Boolean(log.timeOut),
+
+        timeInLocation: log.timeInLocation ?? "No location provided",
+        timeOutLocation: log.timeOutLocation ?? "No location provided",
+
+        timeInCoordinates: log.timeInCoordinates ?? {
+          latitude: 0,
+          longitude: 0,
+        },
+        timeOutCoordinates: log.timeOutCoordinates ?? {
+          latitude: 0,
+          longitude: 0,
+        },
+
+        timeInSelfieUrl: log.timeInSelfieUrl ?? "",
+        timeOutSelfieUrl: log.timeOutSelfieUrl ?? "",
+      }))
     );
 
-    // Flatten the data structure for frontend consumption
-    const result = [];
-    let count = 1;
-
-    attendanceRecords.forEach((attendance) => {
-      attendance.timeLogs.forEach((log) => {
-        // Log each time log coordinates
-        console.log("Time In Coordinates:", log.timeInCoordinates);
-        console.log("Time Out Coordinates:", log.timeOutCoordinates);
-
-        result.push({
-          count: count++,
-          email: attendance.email, // Add this line
-          date: attendance.date,
-          outlet: log.outlet || "",
-          timeIn: log.timeIn,
-          timeOut: log.timeOut,
-          hasTimedIn: !!log.timeIn,
-          hasTimedOut: !!log.timeOut,
-          timeInLocation: log.timeInLocation || "No location provided",
-          timeOutLocation: log.timeOutLocation || "No location provided",
-          timeInCoordinates: log.timeInCoordinates || {
-            latitude: 0,
-            longitude: 0,
-          },
-          timeOutCoordinates: log.timeOutCoordinates || {
-            latitude: 0,
-            longitude: 0,
-          },
-          timeInSelfieUrl: log.timeInSelfieUrl || "",
-          timeOutSelfieUrl: log.timeOutSelfieUrl || "",
-        });
-      });
-    });
-
-    console.log("Formatted Attendance Data:", JSON.stringify(result, null, 2));
-    res.json({ success: true, data: result });
-  } catch (error) {
-    console.error("Error in /get-attendance:", error);
+    res.json({ success: true, data: flat });
+  } catch (err) {
+    console.error("Error in /get-attendance:", err);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
