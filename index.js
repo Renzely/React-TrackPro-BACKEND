@@ -359,31 +359,35 @@ app.get("/attendance/history", async (req, res) => {
 });
 
 // ADMIN ATTENDANCE HISTOTRY
-
-// routes/attendance.js
+// Attendance Export
 app.post("/get-attendance", async (req, res) => {
   try {
-    const { email, startDate, endDate } = req.body;
+    const { email, start: startRaw, end: endRaw } = req.body;
     if (!email) {
       return res
         .status(400)
         .json({ success: false, message: "Email required" });
     }
 
-    // ------------------------------------------------------------------
-    // Build date range on createdAt (real Date field) -------------------
-    // ------------------------------------------------------------------
-    const range = {};
-    if (startDate) range.$gte = new Date(`${startDate}T00:00:00.000Z`);
-    if (endDate) range.$lte = new Date(`${endDate}T23:59:59.999Z`);
+    const dateRange = {};
+    if (startRaw) {
+      const startDate = new Date(startRaw).toISOString().split("T")[0]; // "YYYY‑MM‑DD"
+      dateRange.$gte = startDate;
+    }
+    if (endRaw) {
+      const endDate = new Date(endRaw).toISOString().split("T")[0]; // "YYYY‑MM‑DD"
+      dateRange.$lte = endDate;
+    }
 
+    console.log("Date range:", dateRange); // helpful for debugging
+
+    // Build main Mongo query
     const query = { email };
-    if (Object.keys(range).length) query.createdAt = range;
+    if (Object.keys(dateRange).length) {
+      query.date = dateRange; // <-- filter on `date`, not `createdAt`
+    }
 
-    // ------------------------------------------------------------------
-    // Fetch & prepare response -----------------------------------------
-    // ------------------------------------------------------------------
-    const records = await Attendance.find(query).sort({ createdAt: 1 });
+    const records = await Attendance.find(query).sort({ date: 1 });
 
     if (!records.length) {
       return res.json({ success: true, data: [] });
@@ -394,19 +398,14 @@ app.post("/get-attendance", async (req, res) => {
       att.timeLogs.map((log) => ({
         count: counter++,
         email: att.email,
-        // keep the original human‑readable string for UI
-        date: att.date,
-
+        date: att.date, // keep the original display date
         outlet: log.outlet ?? "",
         timeIn: log.timeIn ?? null,
         timeOut: log.timeOut ?? null,
-
         hasTimedIn: Boolean(log.timeIn),
         hasTimedOut: Boolean(log.timeOut),
-
         timeInLocation: log.timeInLocation ?? "No location provided",
         timeOutLocation: log.timeOutLocation ?? "No location provided",
-
         timeInCoordinates: log.timeInCoordinates ?? {
           latitude: 0,
           longitude: 0,
@@ -415,7 +414,6 @@ app.post("/get-attendance", async (req, res) => {
           latitude: 0,
           longitude: 0,
         },
-
         timeInSelfieUrl: log.timeInSelfieUrl ?? "",
         timeOutSelfieUrl: log.timeOutSelfieUrl ?? "",
       }))
@@ -427,8 +425,6 @@ app.post("/get-attendance", async (req, res) => {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
-
-// Attendance Export
 
 // QTT Image
 
