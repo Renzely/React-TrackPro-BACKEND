@@ -20,18 +20,6 @@ require("dotenv").config();
 const nodemailer = require("nodemailer");
 const Otp = require("./otp");
 
-const dayjs = require("dayjs");
-const utc = require("dayjs/plugin/utc");
-const timezone = require("dayjs/plugin/timezone");
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
-
-function parsePhilippineDateTime(dateStr, timeStr) {
-  const dateTimeStr = `${dateStr} ${timeStr}`;
-  return dayjs.tz(dateTimeStr, "YYYY-MM-DD h:mm A", "Asia/Manila").toDate(); // 👈 Add .toDate()
-}
-
 // MongoDB Atlas connection
 const uri = process.env.uri;
 
@@ -69,41 +57,47 @@ app.post("/save-attendance-images", (req, res) => {
   });
 });
 
-// function parsePhilippineDateTimeAlternative(dateStr, timeStr) {
-//   const baseDate = new Date(dateStr);
+function parsePhilippineDateTimeAlternative(dateStr, timeStr) {
+  const baseDate = new Date(dateStr);
 
-//   const timeStrTrimmed = timeStr.trim().replace(/\s+/g, " ");
-//   const [time, period] = timeStrTrimmed.split(" ");
+  const timeStrTrimmed = timeStr.trim().replace(/\s+/g, " ");
+  const [time, period] = timeStrTrimmed.split(" ");
+  const [hours, minutes] = time.split(":");
 
-//   const [hours, minutes] = time.split(":");
+  let hour24 = parseInt(hours, 10);
+  if (period?.toLowerCase() === "pm" && hour24 !== 12) {
+    hour24 += 12;
+  } else if (period?.toLowerCase() === "am" && hour24 === 12) {
+    hour24 = 0;
+  }
 
-//   let hour24 = parseInt(hours);
+  const year = baseDate.getFullYear();
+  const month = baseDate.getMonth();
+  const day = baseDate.getDate();
 
-//   if (period?.toLowerCase() === "pm" && hour24 !== 12) {
-//     hour24 += 12;
-//   } else if (period?.toLowerCase() === "am" && hour24 === 12) {
-//     hour24 = 0;
-//   }
+  // Construct date in Philippine time
+  const phDate = new Date(
+    Date.UTC(year, month, day, hour24, parseInt(minutes))
+  );
 
-//   const year = baseDate.getFullYear();
-//   const month = baseDate.getMonth();
-//   const day = baseDate.getDate();
+  // Subtract 8 hours
+  phDate.setUTCHours(phDate.getUTCHours() - 8);
 
-//   // Create the datetime string in Philippine timezone format
-//   const isoString = `${year}-${String(month + 1).padStart(2, "0")}-${String(
-//     day
-//   ).padStart(2, "0")}T${String(hour24).padStart(2, "0")}:${String(
-//     parseInt(minutes)
-//   ).padStart(2, "0")}:00.000+08:00`;
-
-//   return new Date(isoString);
-// }
+  return phDate;
+}
 
 // For your date field, also fix it to be in Philippine timezone
-function createPhilippineAttendanceDate(input) {
-  const phTime = dayjs(input).tz("Asia/Manila");
-  const startOfDayPH = phTime.startOf("day");
-  return startOfDayPH.toDate();
+function createPhilippineDate(dateStr) {
+  const date = new Date(dateStr);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
+
+  // Midnight at PH time, then minus 8 hours to shift to UTC
+  const utcDate = new Date(Date.UTC(year, month, day, 0, 0));
+  utcDate.setUTCHours(utcDate.getUTCHours() - 8);
+
+  return utcDate;
 }
 
 // Updated endpoint code
@@ -135,8 +129,8 @@ app.post("/attendance/time-in", async (req, res) => {
     }
 
     // Create Philippine timezone date objects
-    const timeInObj = parsePhilippineDateTime(date, timeIn);
-    const dateObj = createPhilippineAttendanceDate(timeInObj); // Use parsed PH time
+    const dateObj = createPhilippineDate(date); // Use the new function
+    const timeInObj = parsePhilippineDateTimeAlternative(date, timeIn); // Use alternative method
 
     // Log for debugging
     console.log("Original timeIn string:", timeIn);
@@ -217,8 +211,8 @@ app.post("/attendance/time-out", async (req, res) => {
     }
 
     // Create Philippine timezone date objects
-    const timeOutObj = parsePhilippineDateTime(date, timeOut);
-    const dateObj = createPhilippineAttendanceDate(timeOutObj); // Use parsed PH time
+    const dateObj = createPhilippineDate(date); // Use the new function
+    const timeOutObj = parsePhilippineDateTimeAlternative(date, timeOut); // Use alternative method
 
     // Log for debugging
     console.log("Original timeOut string:", timeOut);
@@ -281,7 +275,7 @@ app.get("/user/outlets", auth, async (req, res) => {
 app.get("/attendance/status", async (req, res) => {
   const { email, outlet, date } = req.query;
   try {
-    const dateObj = createPhilippineAttendanceDate(new Date());
+    const dateObj = createPhilippineDate(date);
     const attendance = await Attendance.findOne({ email, date: dateObj });
 
     if (!attendance) {
