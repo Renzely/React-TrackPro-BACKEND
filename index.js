@@ -27,20 +27,9 @@ const timezone = require("dayjs/plugin/timezone");
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-function parsePhilippineDateTimeAlternative(dateStr, timeStr) {
-  const [year, month, day] = dateStr.split("-").map(Number);
-
-  const [time, period] = timeStr.trim().replace(/\s+/g, " ").split(" ");
-  const [hourStr, minuteStr] = time.split(":");
-  let hour = parseInt(hourStr, 10);
-  const minute = parseInt(minuteStr, 10);
-
-  if (period.toLowerCase() === "pm" && hour !== 12) hour += 12;
-  if (period.toLowerCase() === "am" && hour === 12) hour = 0;
-
-  // Create a UTC timestamp then offset it to PH time
-  const utcTimestamp = Date.UTC(year, month - 1, day, hour - 8, minute); // subtract 8 hours
-  return new Date(utcTimestamp + 8 * 60 * 60 * 1000); // Re-apply +8 for PH
+function parsePhilippineDateTime(dateStr, timeStr) {
+  const dateTimeStr = `${dateStr} ${timeStr}`;
+  return dayjs.tz(dateTimeStr, "YYYY-MM-DD h:mm A", "Asia/Manila").toDate(); // 👈 Add .toDate()
 }
 
 // MongoDB Atlas connection
@@ -112,13 +101,9 @@ app.post("/save-attendance-images", (req, res) => {
 
 // For your date field, also fix it to be in Philippine timezone
 function createPhilippineAttendanceDate(input) {
-  const base = typeof input === "string" ? new Date(input) : input;
-
-  // Use dayjs to get PH time
-  const phTime = dayjs(base).tz("Asia/Manila");
-
-  // Format to YYYY-MM-DD (safe for MongoDB as string)
-  return phTime.format("YYYY-MM-DD");
+  const phTime = dayjs(input).tz("Asia/Manila");
+  const startOfDayPH = phTime.startOf("day");
+  return startOfDayPH.toDate();
 }
 
 // Updated endpoint code
@@ -150,8 +135,8 @@ app.post("/attendance/time-in", async (req, res) => {
     }
 
     // Create Philippine timezone date objects
-    const dateObj = createPhilippineAttendanceDate(new Date()); // Use the new function
-    const timeInObj = parsePhilippineDateTimeAlternative(date, timeIn); // Use alternative method
+    const timeInObj = parsePhilippineDateTime(date, timeIn);
+    const dateObj = createPhilippineAttendanceDate(timeInObj); // Use parsed PH time
 
     // Log for debugging
     console.log("Original timeIn string:", timeIn);
@@ -232,8 +217,8 @@ app.post("/attendance/time-out", async (req, res) => {
     }
 
     // Create Philippine timezone date objects
-    const dateObj = createPhilippineAttendanceDate(new Date()); // Use the new function
-    const timeOutObj = parsePhilippineDateTimeAlternative(date, timeOut); // Use alternative method
+    const timeOutObj = parsePhilippineDateTime(date, timeOut);
+    const dateObj = createPhilippineAttendanceDate(timeOutObj); // Use parsed PH time
 
     // Log for debugging
     console.log("Original timeOut string:", timeOut);
