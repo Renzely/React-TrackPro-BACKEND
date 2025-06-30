@@ -28,19 +28,9 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 function parsePhilippineDateTimeAlternative(dateStr, timeStr) {
-  const [year, month, day] = dateStr.split("-").map(Number);
-
-  const [time, period] = timeStr.trim().replace(/\s+/g, " ").split(" ");
-  const [hourStr, minuteStr] = time.split(":");
-  let hour = parseInt(hourStr, 10);
-  const minute = parseInt(minuteStr, 10);
-
-  if (period.toLowerCase() === "pm" && hour !== 12) hour += 12;
-  if (period.toLowerCase() === "am" && hour === 12) hour = 0;
-
-  // Create a UTC timestamp then offset it to PH time
-  const utcTimestamp = Date.UTC(year, month - 1, day, hour - 8, minute); // subtract 8 hours
-  return new Date(utcTimestamp + 8 * 60 * 60 * 1000); // Re-apply +8 for PH
+  const dateTimeStr = `${dateStr} ${timeStr}`;
+  const phTime = dayjs.tz(dateTimeStr, "YYYY-MM-DD h:mm A", "Asia/Manila");
+  return new Date(phTime.format()); // ✅ Keeps PH time (not UTC)
 }
 
 // MongoDB Atlas connection
