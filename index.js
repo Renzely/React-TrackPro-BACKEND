@@ -29,8 +29,17 @@ dayjs.extend(timezone);
 
 function parsePhilippineDateTimeAlternative(dateStr, timeStr) {
   const dateTimeStr = `${dateStr} ${timeStr}`;
+
+  // Parse using dayjs in Asia/Manila timezone
   const phTime = dayjs.tz(dateTimeStr, "YYYY-MM-DD h:mm A", "Asia/Manila");
-  return new Date(phTime.format()); // ✅ Keeps PH time (not UTC)
+
+  if (!phTime.isValid()) {
+    console.error("❌ Invalid PH datetime parse:", dateStr, timeStr);
+    return new Date("Invalid");
+  }
+
+  // Convert to Date object while keeping the correct local time (Asia/Manila)
+  return new Date(phTime.toISOString()); // ← Safe for MongoDB, stores UTC with PH meaning
 }
 
 // MongoDB Atlas connection
