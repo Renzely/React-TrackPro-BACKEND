@@ -10,14 +10,18 @@ const coordinateSchema = new mongoose.Schema(
 
 const timeLogSchema = new mongoose.Schema(
   {
-    outlet: { type: String, required: true }, // Outlet per time log entry
+    outlet: { type: String, required: true },
 
-    timeIn: { type: String, required: false },
+    timeIn: { type: Date, required: false }, // Store as Date, not String
+    timeInPHString: { type: String, required: false }, // ✅ NEW
+
     timeInLocation: { type: String, required: false },
     timeInCoordinates: { type: coordinateSchema, required: false },
     timeInSelfieUrl: { type: String, required: false },
 
-    timeOut: { type: String, required: false },
+    timeOut: { type: Date, required: false }, // Store as Date
+    timeOutPHString: { type: String, required: false }, // ✅ NEW
+
     timeOutLocation: { type: String, required: false },
     timeOutCoordinates: { type: coordinateSchema, required: false },
     timeOutSelfieUrl: { type: String, required: false },

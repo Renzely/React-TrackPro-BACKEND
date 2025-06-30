@@ -112,11 +112,7 @@ app.post("/save-attendance-images", (req, res) => {
 // For your date field, also fix it to be in Philippine timezone
 function createPhilippineAttendanceDate(input) {
   const base = typeof input === "string" ? new Date(input) : input;
-
-  // Use dayjs to get PH time
   const phTime = dayjs(base).tz("Asia/Manila");
-
-  // Format to YYYY-MM-DD (safe for MongoDB as string)
   return phTime.format("YYYY-MM-DD");
 }
 
@@ -148,11 +144,15 @@ app.post("/attendance/time-in", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields." });
     }
 
-    // Create Philippine timezone date objects
-    const dateObj = createPhilippineAttendanceDate(new Date()); // Use the new function
-    const timeInObj = parsePhilippineDateTimeAlternative(date, timeIn); // Use alternative method
+    // Always get PH-local date (reset at 12AM PH time)
+    const now = dayjs().tz("Asia/Manila");
+    const dateObj = now.format("YYYY-MM-DD");
 
-    // Log for debugging
+    const timeInObj = parsePhilippineDateTimeAlternative(dateObj, timeIn);
+    const timeInFormatted = dayjs(timeInObj)
+      .tz("Asia/Manila")
+      .format("dddd, MMMM D, YYYY [at] h:mm A");
+
     console.log("Original timeIn string:", timeIn);
     console.log("Parsed Philippine time:", timeInObj.toString());
     console.log("Philippine time ISO:", timeInObj.toISOString());
@@ -162,6 +162,7 @@ app.post("/attendance/time-in", async (req, res) => {
     const timeLogData = {
       outlet,
       timeIn: timeInObj,
+      timeInPHString: timeInFormatted,
       timeInLocation:
         timeInLocation ||
         `Lat: ${location.latitude}, Long: ${location.longitude}`,
@@ -173,23 +174,19 @@ app.post("/attendance/time-in", async (req, res) => {
     };
 
     if (attendance) {
-      // Check if a timeLog already exists for this outlet
       const existingTimeLog = attendance.timeLogs.find(
         (log) => log.outlet === outlet
       );
 
       if (existingTimeLog) {
-        // Update the existing timeLog with new timeIn info
         existingTimeLog.timeIn = timeLogData.timeIn;
         existingTimeLog.timeInLocation = timeLogData.timeInLocation;
         existingTimeLog.timeInCoordinates = timeLogData.timeInCoordinates;
         existingTimeLog.timeInSelfieUrl = timeLogData.timeInSelfieUrl;
       } else {
-        // No existing timeLog for this outlet, push a new one
         attendance.timeLogs.push(timeLogData);
       }
     } else {
-      // No attendance for this email and date, create new
       attendance = new Attendance({
         email,
         date: dateObj,
@@ -230,11 +227,14 @@ app.post("/attendance/time-out", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields." });
     }
 
-    // Create Philippine timezone date objects
-    const dateObj = createPhilippineAttendanceDate(new Date()); // Use the new function
-    const timeOutObj = parsePhilippineDateTimeAlternative(date, timeOut); // Use alternative method
+    const now = dayjs().tz("Asia/Manila");
+    const dateObj = now.format("YYYY-MM-DD");
 
-    // Log for debugging
+    const timeOutObj = parsePhilippineDateTimeAlternative(dateObj, timeOut);
+    const timeOutFormatted = dayjs(timeOutObj)
+      .tz("Asia/Manila")
+      .format("dddd, MMMM D, YYYY [at] h:mm A");
+
     console.log("Original timeOut string:", timeOut);
     console.log("Parsed Philippine time:", timeOutObj.toString());
 
@@ -244,7 +244,6 @@ app.post("/attendance/time-out", async (req, res) => {
       return res.status(404).json({ error: "Attendance record not found." });
     }
 
-    // Find the latest timeLog for the outlet without timeOut set
     const lastTimeLog = [...attendance.timeLogs]
       .reverse()
       .find((log) => log.outlet === outlet && !log.timeOut);
@@ -256,6 +255,7 @@ app.post("/attendance/time-out", async (req, res) => {
     }
 
     lastTimeLog.timeOut = timeOutObj;
+    lastTimeLog.timeOutPHString = timeOutFormatted;
     lastTimeLog.timeOutLocation =
       timeOutLocation ||
       `Lat: ${location.latitude}, Long: ${location.longitude}`;
@@ -266,7 +266,6 @@ app.post("/attendance/time-out", async (req, res) => {
     lastTimeLog.timeOutSelfieUrl = timeOutSelfieUrl;
 
     await attendance.save();
-
     return res.status(200).json({ message: "Time-out recorded successfully." });
   } catch (error) {
     console.error("Time-out error:", error);
