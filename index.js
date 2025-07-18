@@ -1548,6 +1548,49 @@ app.post("/signup", async (req, res) => {
   res.status(201).json({ message: "User registered. OTP sent to email." });
 });
 
+// FORGOT PASSWORD ADMIN
+
+app.post("/send-otp-forgotpassword", async (req, res) => {
+  const { emailAddress } = req.body;
+
+  const oldUser = await AdminUser.findOne({ emailAddress: emailAddress });
+
+  if (!oldUser) {
+    return res.status(404).json({ error: "Email does not exist" });
+  }
+
+  try {
+    var code = Math.floor(100000 + Math.random() * 900000);
+    code = String(code);
+    code = code.substring(0, 4);
+
+    const info = await transporter.sendMail({
+      from: {
+        name: "BMPower",
+        address: process.env.Email,
+      },
+      to: emailAddress,
+      subject: "OTP code",
+      html:
+        "<b>Your OTP code is</b> " +
+        code +
+        "<b>. Do not share this code with others.</b>",
+    });
+
+    return res.status(200).json({
+      status: 200,
+      data: info,
+      emailAddress: emailAddress,
+      code: code,
+    });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ error: "Failed to send OTP. Please try again." });
+  }
+});
+
 // FORGOT PASSWORD
 
 app.post("/forgot-password", async (req, res) => {
