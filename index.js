@@ -1567,7 +1567,7 @@ app.post("/send-otp-forgotpassword", async (req, res) => {
     const info = await transporter.sendMail({
       from: {
         name: "BMPower",
-        address: process.env.Email,
+        address: process.env.EMAIL_PASS,
       },
       to: emailAddress,
       subject: "OTP code",
