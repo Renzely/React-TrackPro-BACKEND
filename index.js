@@ -1551,10 +1551,10 @@ app.post("/signup", async (req, res) => {
 // FORGOT PASSWORD
 
 app.post("/forgot-password", async (req, res) => {
-  const { email } = req.body;
+  const { emailAddress } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ emailAddress });
 
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -1563,7 +1563,7 @@ app.post("/forgot-password", async (req, res) => {
 
     // Save OTP in the Otp collection with purpose "reset-password"
     await Otp.create({
-      email,
+      emailAddress,
       otp,
       purpose: "reset-password",
       createdAt: new Date(),
@@ -1572,7 +1572,7 @@ app.post("/forgot-password", async (req, res) => {
     // Send OTP via email
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
-      to: email,
+      to: emailAddress,
       subject: "Password Reset OTP",
       text: `Your OTP is: ${otp}`,
     });
