@@ -1591,6 +1591,23 @@ app.post("/send-otp-forgotpassword", async (req, res) => {
   }
 });
 
+app.put("/forgot-password-reset", async (req, res) => {
+  const { password, emailAddress } = req.body;
+
+  const encryptedPassword = await bcrypt.hash(password, 8);
+
+  console.log(emailAddress);
+  try {
+    await AdminUser.findOneAndUpdate(
+      { emailAddress: emailAddress },
+      { $set: { password: encryptedPassword } }
+    );
+    res.send({ status: 200, data: "Password updated" });
+  } catch (error) {
+    res.send({ status: "error", data: error });
+  }
+});
+
 // FORGOT PASSWORD
 
 app.post("/forgot-password", async (req, res) => {
