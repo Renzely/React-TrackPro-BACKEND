@@ -1747,7 +1747,7 @@ app.post("/login", async (req, res) => {
     jwt.sign(
       payload,
       process.env.JWT_SECRET,
-      { expiresIn: "5h" },
+      { expiresIn: "180d" }, // 6-month token
       (err, token) => {
         if (err) throw err;
         res.json({
