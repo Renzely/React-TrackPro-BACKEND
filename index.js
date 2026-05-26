@@ -944,6 +944,13 @@ app.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
+    if (!user.isVerified) {
+      return res.status(403).json({
+        message:
+          "Your account is inactive. Please contact your Account Supervisor to activate your account.",
+      });
+    }
+
     const payload = {
       user: {
         id: user.id,
