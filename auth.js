@@ -19,10 +19,26 @@ module.exports = function (req, res, next) {
       return res.status(400).json({ message: "Invalid token payload" });
     }
 
-    req.user = decoded.user; // Attach decoded user to request
+    // ── TEMPORARY DEBUG LOG ──────────────────────────────────────────────
+    console.log("✅ Token valid for:", decoded.user.email, {
+      issuedAt: new Date(decoded.iat * 1000).toISOString(),
+      expiresAt: decoded.exp
+        ? new Date(decoded.exp * 1000).toISOString()
+        : "NO EXPIRY",
+      secondsRemaining: decoded.exp
+        ? decoded.exp - Math.floor(Date.now() / 1000)
+        : "N/A",
+    });
+    // ─────────────────────────────────────────────────────────────────────
+
+    req.user = decoded.user;
     next();
   } catch (err) {
-    console.error("Token verification error:", err.message);
+    // ── TEMPORARY DEBUG LOG ──────────────────────────────────────────────
+    console.error("❌ Token verification FAILED:", err.message, {
+      tokenPreview: token?.substring(0, 20) + "...",
+    });
+    // ─────────────────────────────────────────────────────────────────────
     return res.status(401).json({ message: "Token is not valid" });
   }
 };
