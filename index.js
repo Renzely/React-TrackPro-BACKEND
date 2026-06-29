@@ -307,7 +307,6 @@ app.get("/attendance/status", async (req, res) => {
 
     if (shiftCount === 0) return res.json(empty);
 
-    // ✅ Find active open log (timed in but not out)
     const activeLog =
       outletLogs.find((l) => l.timeIn && !l.timeOut) ??
       outletLogs[outletLogs.length - 1]; // fallback to last log
